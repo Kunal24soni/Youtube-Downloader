@@ -1,117 +1,215 @@
+import os, sys, threading
 import tkinter as tk
-from tkinter import messagebox,ttk
-from PIL import Image,ImageTk
+from tkinter import messagebox, ttk
+from PIL import Image, ImageTk
 from pathlib import Path
 
-path = Path("Assets/icon.png")
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
+
+from backend import core as backend_core
+
+ICON_PATH = Path("Assets/icon.png")
+DEFAULT_THUMB = Path(".thumbnails/default.jpg")
+
+def _grid(widget, row, col, **kw): widget.grid(row=row, column=col, **kw)
+def _label(parent, text, **kw): return tk.Label(parent, text=text, **kw)
 
 class App:
-    def __init__(self,root):     #initialize the window
+    def __init__(self, root):
         self.root = root
         self.root.title("FetchTube")
-        #self.root.resizable(False,False)
-        img = Image.open(path)
-        icon = ImageTk.PhotoImage(img)
-        self.root.iconphoto(True, icon)
-        self.img = img
+        self.root.geometry("800x700")
+        self.root.minsize(800, 600)
+        try:
+            self.root.iconphoto(True, ImageTk.PhotoImage(Image.open(ICON_PATH)))
+        except: pass
+        self.video_cache = {}
         self.create_widgets()
-    
+
     def create_widgets(self):
-        self.title = tk.Label(self.root,text="FetchTube",font=("roboto",40,"bold"),bg="#FF0000",fg="white",borderwidth=2,relief="solid")
-        self.title.pack(fill="x")
+        title = _label(self.root, "FetchTube", font=("roboto", 40, "bold"), bg="#FF0000", fg="white", borderwidth=2, relief="solid")
+        title.pack(fill="x")
+        
+        self.main_frame = tk.LabelFrame(self.root, text="main_frame", borderwidth=2, relief="solid")
+        self.main_frame.pack(pady=10, padx=10, fill="both", expand=True)
 
-        self.main_frame = tk.LabelFrame(self.root,text="main_frame",borderwidth=2,relief="solid")
-        self.main_frame.pack(pady=10,padx=10)
+        self.url_entry = tk.Entry(self.main_frame, font=("courier", 12, "italic"), relief="flat", borderwidth=2)
+        _grid(self.url_entry, 1, 1, sticky="ew", pady=10)
+        self.url_entry.insert(0, "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        self.url_entry.bind("<FocusIn>", lambda e: e.widget.delete(0, "end") if e.widget.get()=="enter a url" else None)
+        self.url_entry.bind("<FocusOut>", lambda e: e.widget.insert(0, "enter a url") if not e.widget.get() else None)
 
-        self.url_entry = tk.Entry(self.main_frame,font=("courier",12,"italic"),width=30,relief="flat",borderwidth=2)
-        self.url_entry.grid(row=1,column=1,sticky="ew",pady=10)
-        self.url_entry.insert(0,"https://www.youtube.com/watch?v=dQw4w9WgXcQl")
-
-        self.url_entry.bind("<FocusIn>",lambda event:on_entry_click())
-        self.url_entry.bind("<FocusOut>",lambda event:on_focus_click())
-
-        self.clear_button = tk.Button(self.main_frame,text="X",command=lambda :clear(),width=3,height=1,relief="flat",bg="white",activebackground="white")
-        self.clear_button.grid(row=1,column=2,sticky="ew")
-
-        self.fetch_button = tk.Button(self.main_frame,text="Fetch downloads",command=lambda :fetch(),border=2,relief="solid",width=20)
-        self.fetch_button.grid(row=2,column=1)
-
-        def fetch():
-            pass
-        def clear():
-            self.url_entry.delete(0,tk.END)
-
-        def on_entry_click():
-            if (self.url_entry.get()) == "enter a url":
-                self.url_entry.delete(0,tk.END)
-        def on_focus_click():
-            if self.url_entry.get() == "":
-                self.url_entry.insert(0,"enter a url")
-
+        _grid(tk.Button(self.main_frame, text="X", command=lambda: self.url_entry.delete(0, "end"), width=3, height=1, relief="flat", bg="white"), 1, 2, sticky="ns", padx=5)
+        _grid(tk.Button(self.main_frame, text="Fetch downloads", command=self.fetch, border=2, relief="solid"), 2, 1, sticky="ew")
+        
+        self.status_label_fetch = _label(self.main_frame, "Ready", fg="blue", font=("arial", 10))
+        _grid(self.status_label_fetch, 2, 2, sticky="ew", padx=5)
+        
+        self.main_frame.grid_columnconfigure(1, weight=1)
+        self.main_frame.grid_columnconfigure(2, weight=0)
         self.download_widgets()
 
+    def fetch(self):
+        url = self.url_entry.get().strip()
+        if not url: messagebox.showwarning("URL required", "Please enter a video URL"); return
+        
+        self.status_label_fetch.config(text="Fetching...", fg="orange")
+        self.root.update_idletasks()
+        
+        def _work():
+            try:
+                if url in self.video_cache:
+                    self.root.after(0, lambda: self.status_label_fetch.config(text="Loading from cache...", fg="blue"))
+                    info = self.video_cache[url]
+                else:
+                    info = backend_core.get_info(url)
+                    self.video_cache[url] = info
+                self.root.after(0, lambda: self._update_info(info))
+                self.root.after(0, lambda: self.status_label_fetch.config(text="Ready", fg="green"))
+            except Exception as e:
+                self.root.after(0, lambda: self.status_label_fetch.config(text="Error", fg="red"))
+                self.root.after(0, lambda: messagebox.showerror("Fetch failed", str(e)))
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _update_info(self, info):
+        self.video_title.config(text=info.get("title") or "Unknown")
+        self.video_channel.config(text=f"Channel: {info.get('channel') or 'Unknown'}")
+        dur = info.get("duration") or 0
+        self.video_duration.config(text=f"Duration: {dur//60}:{dur%60:02d}")
+        
+        try:
+            thumb_path = info.get("thumbnail")
+            img = Image.open(thumb_path) if (thumb_path and Path(thumb_path).exists()) else (Image.open(DEFAULT_THUMB) if DEFAULT_THUMB.exists() else None)
+            if img:
+                img = ImageTk.PhotoImage(img.resize((160, 100)))
+                self.thumb.config(image=img)
+                self.thumb.img = img
+        except: pass
+
+        self.format_quality_sizes = {}
+        available_qualities = set()
+        for fmt in info.get("formats") or []:
+            if not (fs := fmt.get("filesize")) or fs <= 0: continue
+            is_audio = (ac := fmt.get("acodec")) and ac != "none" and (not (vc := fmt.get("vcodec")) or vc == "none")
+            is_video = (vc := fmt.get("vcodec")) and vc != "none"
+            
+            if is_audio: self.format_quality_sizes[("mp3(audio)", "audio")] = max(self.format_quality_sizes.get(("mp3(audio)", "audio"), 0), fs)
+            if is_video and (h := fmt.get("height")):
+                qual_str = f"{h}p"
+                available_qualities.add(qual_str)
+                for c in ("mp4(video)", "webm(video)"):
+                    self.format_quality_sizes[(c, qual_str)] = max(self.format_quality_sizes.get((c, qual_str), 0), fs)
+        
+        # Update quality menu with available qualities, sorted by resolution
+        sorted_quals = sorted(available_qualities, key=lambda x: int(x[:-1]))
+        self.quality_menu.config(values=sorted_quals)
+        if sorted_quals and self.quality_var.get() not in sorted_quals:
+            self.quality_var.set(sorted_quals[-1])  # Set to highest available
+        
+        self._update_size_label()
+
+    def _on_format_changed(self, *args):
+        fmt = self.format_var.get()
+        self.quality_menu.config(state="disabled" if "audio" in fmt or "mp3" in fmt else "readonly")
+        self._update_size_label()
+
+    def _update_size_label(self):
+        fmt, qual = self.format_var.get(), self.quality_var.get()
+        qual_key = "audio" if "audio" in fmt or "mp3" in fmt else qual
+        size_bytes = self.format_quality_sizes.get((fmt, qual_key), 0)
+        self.size.config(text=f"{size_bytes/1024/1024:.2f} MB" if size_bytes > 0 else "unknown")
+
     def download_widgets(self):
-        img = Image.open(".thumbnail//thumb.jpg")
-        resized_img = img.resize((160,100))
-        thumb = ImageTk.PhotoImage(resized_img)
+        img = Image.open(DEFAULT_THUMB) if DEFAULT_THUMB.exists() else Image.new("RGB", (160, 100), color=(200,200,200))
+        img = ImageTk.PhotoImage(img.resize((160, 100)))
+        
+        self.video_info = tk.LabelFrame(self.main_frame, text="video_info", borderwidth=2, relief="solid")
+        _grid(self.video_info, 3, 1, sticky="nsew", pady=10, padx=10)
+        
+        self.thumb = _label(self.video_info, "", image=img); self.thumb.img = img
+        _grid(self.thumb, 1, 1, rowspan=4, padx=5)
+        
+        self.video_title = _label(self.video_info, "Title", font=("helvitica", 13, "bold"), anchor="nw", wraplength=300, justify="left")
+        _grid(self.video_title, 1, 2, sticky="nw", padx=5)
+        
+        self.video_channel = _label(self.video_info, "Channel: Unknown", font=("helvitica", 10), anchor="nw", fg="gray")
+        _grid(self.video_channel, 2, 2, sticky="nw", padx=5)
+        
+        self.video_duration = _label(self.video_info, "Duration: 0:00", font=("helvitica", 10), anchor="nw", fg="gray")
+        _grid(self.video_duration, 3, 2, sticky="nw", padx=5)
+        
+        self.download_frame = tk.LabelFrame(self.main_frame, text="download_frame", borderwidth=2, relief="solid")
+        _grid(self.download_frame, 4, 1, sticky="ew")
+        
+        fmt_var = tk.StringVar(value="mp4(video)")
+        _grid(_label(self.download_frame, "format:"), 1, 1, padx=20, sticky="ew")
+        fmt_combo = ttk.Combobox(self.download_frame, textvariable=fmt_var, values=["mp3(audio)","mp4(video)","webm(video)"], width=12, state="readonly")
+        _grid(fmt_combo, 2, 1, sticky="ew", pady=10)
+        fmt_var.trace_add("write", self._on_format_changed)
+        self.format_var = fmt_var
+        
+        qual_var = tk.StringVar(value="1080p")
+        _grid(_label(self.download_frame, "Quality"), 1, 2)
+        self.quality_menu = ttk.Combobox(self.download_frame, textvariable=qual_var, values=["144p","240p","420p","720p","1080p"], width=10, state="readonly")
+        _grid(self.quality_menu, 2, 2)
+        qual_var.trace_add("write", lambda *a: self._update_size_label())
+        self.quality_var = qual_var
+        
+        _grid(_label(self.download_frame, "File size:"), 1, 3, pady=10)
+        self.size = _label(self.download_frame, "unknown", bg="white", borderwidth=1, relief="solid", width=10)
+        _grid(self.size, 2, 3, pady=10)
+        
+        _grid(_label(self.download_frame, str(Path.cwd()), bg="white", anchor="w"), 3, 1, pady=10, sticky="ew")
+        _grid(tk.Button(self.download_frame, text="browse"), 3, 2, pady=10, sticky="ew")
+        _grid(tk.Button(self.download_frame, text="download", command=self.start_download), 3, 3, pady=10, padx=10, sticky="ew")
+        
+        self.status_bar = ttk.Progressbar(self.download_frame, value=0, maximum=100)
+        _grid(self.status_bar, 4, 1, columnspan=3, sticky="ew", pady=10, padx=10)
+        
+        self.status_label = _label(self.download_frame, "0%", anchor="center")
+        _grid(self.status_label, 5, 1, columnspan=3)
+        
+        for i in (1,2,3): self.download_frame.grid_columnconfigure(i, weight=1)
+        
+        _label(self.root, "Don't use copyrighted content without permission.\nWe don't promote plagiarlism", font=("arial", 8)).pack(side="bottom", anchor="s")
+        self.format_quality_sizes = {}
 
-        self.video_info = tk.LabelFrame(self.main_frame,text="video_info")
-        self.video_info.grid(row=3,column=1,sticky="nsew",pady=10,padx=10)
+    def _progress_hook(self, d):
+        def _upd():
+            s = d.get("status")
+            if s == "downloading":
+                tb, db = d.get("total_bytes") or d.get("total_bytes_estimate") or d.get("filesize"), d.get("downloaded_bytes")
+                if tb and db:
+                    pct = int(db/tb*100)
+                    self.status_bar['value'] = pct
+                    self.status_label.config(text=f"{pct}% ({db/1024/1024:.1f}MB / {tb/1024/1024:.1f}MB)")
+                    self.root.update_idletasks()
+            elif s == "finished":
+                self.status_bar['value'] = 100
+                self.status_label.config(text="100% - Complete!")
+        try: self.root.after(0, _upd)
+        except: pass
 
-        self.thumb = tk.Label(self.video_info,text="thumbnail",image=thumb)
-        self.thumb.img = thumb
-        self.thumb.grid(row=1,column=1,rowspan=3)
+    def start_download(self):
+        url = self.url_entry.get().strip()
+        if not url: messagebox.showwarning("URL required", "Enter URL"); return
+        
+        self.status_bar['value'] = 0
+        self.status_label.config(text="Starting...")
+        self.root.update_idletasks()
+        
+        def _work():
+            try:
+                self.root.after(0, lambda: self.status_label.config(text="Downloading..."))
+                backend_core.download(url, self.format_var.get(), self.quality_var.get(), str(Path.cwd()), progress_hook=self._progress_hook)
+                self.root.after(0, lambda: messagebox.showinfo("Success", "Download finished!"))
+            except Exception as e:
+                self.root.after(0, lambda: self.status_label.config(text="Failed"))
+                self.root.after(0, lambda: messagebox.showerror("Failed", str(e)))
+        threading.Thread(target=_work, daemon=True).start()
 
-        self.video_title = tk.Label(self.video_info,text="Anisible in 100 seconds \n Fireship",font=("helvitica",12,"bold"),anchor="nw")
-        self.video_title.grid(row=1,column=2)
-        self.download_frame = tk.LabelFrame(self.main_frame,text="download_frame")
-        self.download_frame.grid(row=4,column=1,sticky="ew")
-
-        format_label = tk.Label(self.download_frame,text="format:")
-        format_label.grid(row=1,column=1,padx=20,sticky="ew")
-        format_var = tk.StringVar(value="mp4")
-        self.format_menu = ttk.Combobox(self.download_frame, textvariable=format_var,
-                                        values=["mp3(audio)","mp4(video)","webm(video)"],
-                                         width=6,state="readonly")
-        self.format_menu.grid(row=2,column=1,sticky="ew",pady=10)
-        self.format_var = format_var
-        self.download_frame.grid_columnconfigure(1,weight=1)
-
-        quality_label = tk.Label(self.download_frame,text="Quality")
-        quality_label.grid(row=1,column=2)
-        quality_var = tk.StringVar(value="1080p")
-        self.quality_menu = ttk.Combobox(self.download_frame, textvariable=quality_var,
-                                        values=["144p", "240p", "420p", "720p", "1080p"], width=10,state="readonly")
-        self.quality_menu.grid(row=2,column=2)
-        self.download_frame.grid_columnconfigure(2,weight=1)
-        self.quality_var = quality_var
-
-        self.size_label = tk.Label(self.download_frame,text="File size:",width=10)
-        self.size_label.grid(row=1,column=3,pady=10)
-        self.size = tk.Label(self.download_frame,width=10,text="50.00mb",bg="white",borderwidth=1,relief="solid",)
-        self.size.grid(row=2,column=3,pady=10)
-        self.download_frame.grid_columnconfigure(3,weight=1)
-
-        self.browse_label = tk.Label(self.download_frame,text="D:\projects\FetchTube\.assets",bg="white",anchor="w")
-        self.browse_label.grid(row=3,column=1,pady=10,sticky="ew")
-        self.browse_button = tk.Button(self.download_frame,text="browse")
-        self.browse_button.grid(row=3,column=2,pady=10,sticky="ew")
-
-        self.download_button = tk.Button(self.download_frame,text="download",cursor="bottom_side")
-        self.download_button.grid(row=3,column=3,pady=10,padx=10,sticky="ew")
-
-        self.status_bar = ttk.Progressbar(self.download_frame,value=100)
-        self.status_bar.grid(row=4,column=1,columnspan=3,sticky="ew",pady=10,padx=10)
-
-        self.status_label = tk.Label(self.download_frame,text="100%",anchor="center",background=None)
-        self.status_label.grid(row=5,column=1,columnspan=3)
-
-        self.footer()
-
-    def footer(self):
-        self.footer = tk.Label(self.root,text="Dont't use copyrighted^© content without the the author's permission.\n We don't promote any type of plagralism")
-        self.footer.pack(side="bottom", anchor="s")
-if __name__=="__main__":
+if __name__ == "__main__":
     root = tk.Tk()
-    app = App(root)
-    root.mainloop(0)
+    App(root)
+    root.mainloop()
