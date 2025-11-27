@@ -1,7 +1,5 @@
 .thumbnails
 
-backend/__pycache__
-
 #audio
 *.mp3
 

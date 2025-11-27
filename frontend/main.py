@@ -1,6 +1,6 @@
 import os, sys, threading
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, ttk,filedialog
 from PIL import Image, ImageTk
 from pathlib import Path
 
@@ -9,8 +9,8 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from backend import core as backend_core
 
-ICON_PATH = Path("Assets/icon.png")
-DEFAULT_THUMB = Path(".thumbnails/default.jpg")
+ICON_PATH:Path = Path("Assets/icon.png")
+DEFAULT_THUMB:Path = Path(".thumbnails/default.jpg")
 
 def _grid(widget, row, col, **kw): widget.grid(row=row, column=col, **kw)
 def _label(parent, text, **kw): return tk.Label(parent, text=text, **kw)
@@ -19,31 +19,33 @@ class App:
     def __init__(self, root):
         self.root = root
         self.root.title("FetchTube")
-        self.root.geometry("800x700")
-        self.root.minsize(800, 600)
+        self.root.geometry("800x600")
+        self.root.minsize(800, 500)
+        self.root.configure(bg="#55ff55")
         try:
             self.root.iconphoto(True, ImageTk.PhotoImage(Image.open(ICON_PATH)))
         except: pass
         self.video_cache = {}
+        self.output_path:Path = os.path.join(str(Path.cwd()),"donwloads")
         self.create_widgets()
 
     def create_widgets(self):
         title = _label(self.root, "FetchTube", font=("roboto", 40, "bold"), bg="#FF0000", fg="white", borderwidth=2, relief="solid")
         title.pack(fill="x")
         
-        self.main_frame = tk.LabelFrame(self.root, text="main_frame", borderwidth=2, relief="solid")
+        self.main_frame = tk.Frame(self.root, borderwidth=2, relief="solid",bg="#fffda0")
         self.main_frame.pack(pady=10, padx=10, fill="both", expand=True)
 
-        self.url_entry = tk.Entry(self.main_frame, font=("courier", 12, "italic"), relief="flat", borderwidth=2)
-        _grid(self.url_entry, 1, 1, sticky="ew", pady=10)
+        self.url_entry = tk.Entry(self.main_frame, font=("courier", 12), relief="flat", borderwidth=2, fg="gray")
+        _grid(self.url_entry, 1, 1, sticky="ew", pady=10, padx=10)
         self.url_entry.insert(0, "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         self.url_entry.bind("<FocusIn>", lambda e: e.widget.delete(0, "end") if e.widget.get()=="enter a url" else None)
         self.url_entry.bind("<FocusOut>", lambda e: e.widget.insert(0, "enter a url") if not e.widget.get() else None)
 
-        _grid(tk.Button(self.main_frame, text="X", command=lambda: self.url_entry.delete(0, "end"), width=3, height=1, relief="flat", bg="white"), 1, 2, sticky="ns", padx=5)
-        _grid(tk.Button(self.main_frame, text="Fetch downloads", command=self.fetch, border=2, relief="solid"), 2, 1, sticky="ew")
+        _grid(tk.Button(self.main_frame, text="X", command=lambda: self.url_entry.delete(0, "end"), width=3, height=1, relief="flat", bg="white"), 1, 2, sticky="ew", padx=5)
+        _grid(tk.Button(self.main_frame, text="Fetch downloads", command=self.fetch, border=2, relief="solid",bg="#ff3232",activebackground="#ff1111"), 2, 1, sticky="ew", padx=10,)
         
-        self.status_label_fetch = _label(self.main_frame, "Ready", fg="blue", font=("arial", 10))
+        self.status_label_fetch = _label(self.main_frame, "Ready", fg="blue", font=("arial", 10),width=7)
         _grid(self.status_label_fetch, 2, 2, sticky="ew", padx=5)
         
         self.main_frame.grid_columnconfigure(1, weight=1)
@@ -124,56 +126,68 @@ class App:
         img = Image.open(DEFAULT_THUMB) if DEFAULT_THUMB.exists() else Image.new("RGB", (160, 100), color=(200,200,200))
         img = ImageTk.PhotoImage(img.resize((160, 100)))
         
-        self.video_info = tk.LabelFrame(self.main_frame, text="video_info", borderwidth=2, relief="solid")
-        _grid(self.video_info, 3, 1, sticky="nsew", pady=10, padx=10)
+        self.video_info = tk.Frame(self.main_frame, borderwidth=2, relief="solid",bg="#fffd00")
+        _grid(self.video_info, 3, 1, sticky="nsew", pady=10, padx=10,columnspan=2)
         
-        self.thumb = _label(self.video_info, "", image=img); self.thumb.img = img
-        _grid(self.thumb, 1, 1, rowspan=4, padx=5)
+        self.thumb = _label(self.video_info, "", image=img,relief="solid"); self.thumb.img = img
+        _grid(self.thumb, 1, 1, rowspan=4, padx=10, pady=10)
         
-        self.video_title = _label(self.video_info, "Title", font=("helvitica", 13, "bold"), anchor="nw", wraplength=300, justify="left")
-        _grid(self.video_title, 1, 2, sticky="nw", padx=5)
+        self.video_title = _label(self.video_info, "Title", font=("helvitica", 13, "bold"),bg="#fffb00", anchor="nw", wraplength=300, justify="left")
+        _grid(self.video_title, 1, 2, sticky="nw", padx=5, pady=10)
         
-        self.video_channel = _label(self.video_info, "Channel: Unknown", font=("helvitica", 10), anchor="nw", fg="gray")
+        self.video_channel = _label(self.video_info, "Channel: Unknown", font=("helvitica", 10),bg="#fffb00", anchor="nw", fg="gray")
         _grid(self.video_channel, 2, 2, sticky="nw", padx=5)
         
-        self.video_duration = _label(self.video_info, "Duration: 0:00", font=("helvitica", 10), anchor="nw", fg="gray")
+        self.video_duration = _label(self.video_info, "Duration: 0:00", font=("helvitica", 10),bg="#fffb00", anchor="nw", fg="gray")
         _grid(self.video_duration, 3, 2, sticky="nw", padx=5)
         
-        self.download_frame = tk.LabelFrame(self.main_frame, text="download_frame", borderwidth=2, relief="solid")
-        _grid(self.download_frame, 4, 1, sticky="ew")
+        self.download_frame = tk.Frame(self.main_frame, borderwidth=2, relief="solid",bg="#fffb00")
+        _grid(self.download_frame, 4, 1, sticky="ew",columnspan=2,padx=10,pady=10)
         
         fmt_var = tk.StringVar(value="mp4(video)")
-        _grid(_label(self.download_frame, "format:"), 1, 1, padx=20, sticky="ew")
+        _grid(_label(self.download_frame, "format:"), 1, 1, padx=20)
         fmt_combo = ttk.Combobox(self.download_frame, textvariable=fmt_var, values=["mp3(audio)","mp4(video)","webm(video)"], width=12, state="readonly")
-        _grid(fmt_combo, 2, 1, sticky="ew", pady=10)
+        _grid(fmt_combo, 2, 1, sticky="ew", pady=10,padx=20)
         fmt_var.trace_add("write", self._on_format_changed)
         self.format_var = fmt_var
         
         qual_var = tk.StringVar(value="1080p")
-        _grid(_label(self.download_frame, "Quality"), 1, 2)
+        _grid(_label(self.download_frame, "Quality"), 1, 2,padx=10)
         self.quality_menu = ttk.Combobox(self.download_frame, textvariable=qual_var, values=["144p","240p","420p","720p","1080p"], width=10, state="readonly")
-        _grid(self.quality_menu, 2, 2)
+        _grid(self.quality_menu, 2, 2,padx=20,sticky="ew",pady=10)
         qual_var.trace_add("write", lambda *a: self._update_size_label())
         self.quality_var = qual_var
         
-        _grid(_label(self.download_frame, "File size:"), 1, 3, pady=10)
+        _grid(_label(self.download_frame, "File size:"), 1, 3, pady=10,padx=10)
         self.size = _label(self.download_frame, "unknown", bg="white", borderwidth=1, relief="solid", width=10)
-        _grid(self.size, 2, 3, pady=10)
-        
-        _grid(_label(self.download_frame, str(Path.cwd()), bg="white", anchor="w"), 3, 1, pady=10, sticky="ew")
-        _grid(tk.Button(self.download_frame, text="browse"), 3, 2, pady=10, sticky="ew")
-        _grid(tk.Button(self.download_frame, text="download", command=self.start_download), 3, 3, pady=10, padx=10, sticky="ew")
-        
+        _grid(self.size, 2, 3, pady=10,padx=10,sticky="ew")
+
+        self.browse_buttons_frame = tk.Frame(self.download_frame,bg="#fffb00")
+        _grid(self.browse_buttons_frame,3,1,pady=10,padx=10,columnspan=2,sticky="ew")
+        self.browse_buttons_frame.columnconfigure(1,weight=1)
+
+        self.browse_label = tk.Label(self.browse_buttons_frame, text=self.output_path, bg="white", anchor="w",relief="sunken",width=30)
+        _grid(self.browse_label,3,1,sticky="ew",pady=10)
+        _grid(tk.Button(self.browse_buttons_frame, text="browse",command=self.browse_dir,relief="sunken",bd=2,width=12), 3, 2, pady=10, sticky="ew")
+
+        _grid(tk.Button(self.download_frame, text="download", command=self.start_download,cursor="bottom_side",bg="#ff0000",fg="white",relief="solid"), 3, 3, pady=10, padx=10, sticky="ew")
+
         self.status_bar = ttk.Progressbar(self.download_frame, value=0, maximum=100)
         _grid(self.status_bar, 4, 1, columnspan=3, sticky="ew", pady=10, padx=10)
         
         self.status_label = _label(self.download_frame, "0%", anchor="center")
-        _grid(self.status_label, 5, 1, columnspan=3)
+        _grid(self.status_label, 5, 1, columnspan=3,pady=10)
         
         for i in (1,2,3): self.download_frame.grid_columnconfigure(i, weight=1)
         
-        _label(self.root, "Don't use copyrighted content without permission.\nWe don't promote plagiarlism", font=("arial", 8)).pack(side="bottom", anchor="s")
+        _label(self.root, "Don't use copyrighted content without permission.", font=("arial", 8),bg="#55ff55").pack(side="bottom", anchor="s")
         self.format_quality_sizes = {}
+
+    def browse_dir(self):
+        new_path = filedialog.askdirectory(initialdir=self.output_path)
+        if not new_path: return
+        self.output_path = new_path
+        self.browse_label.config(text=new_path)
 
     def _progress_hook(self, d):
         def _upd():
@@ -202,7 +216,7 @@ class App:
         def _work():
             try:
                 self.root.after(0, lambda: self.status_label.config(text="Downloading..."))
-                backend_core.download(url, self.format_var.get(), self.quality_var.get(), str(Path.cwd()), progress_hook=self._progress_hook)
+                backend_core.download(url, self.format_var.get(), self.quality_var.get(), self.output_path, progress_hook=self._progress_hook)
                 self.root.after(0, lambda: messagebox.showinfo("Success", "Download finished!"))
             except Exception as e:
                 self.root.after(0, lambda: self.status_label.config(text="Failed"))

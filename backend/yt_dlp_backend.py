@@ -8,9 +8,7 @@ try:
 except Exception:  # pragma: no cover - import guarded
     YoutubeDL = None
 
-
 BASE_THUMB_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".thumbnails")
-
 
 def _make_folder_if_not_exists(path: str):
     if not os.path.exists(path):
